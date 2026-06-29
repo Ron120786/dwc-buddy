@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DWC Smart v4</title>
+
+<style>
+body {
+  font-family: Arial;
+  background: #070707;
+  color: white;
+  padding: 16px;
+}
+
+h1 { margin-bottom: 5px; }
+
+.card {
+  background: #1a1a1a;
+  padding: 12px;
+  margin: 10px 0;
+  border-radius: 12px;
+}
+
+input, select, button {
+  width: 100%;
+  padding: 10px;
+  margin-top: 6px;
+  border-radius: 8px;
+  border: none;
+  font-size: 15px;
+}
+
+button {
+  background: #2ecc71;
+  color: white;
+  font-weight: bold;
+}
+
+.bad { color: #ff4d4d; }
+.good { color: #2ecc71; }
+.warn { color: #f1c40f; }
+
+.small { font-size: 12px; opacity: 0.75; }
+</style>
+</head>
+
+<body>
+
+<h1>🌱 DWC Smart v4</h1>
+
+<div class="card">
+  <h3>🔔 Notificaties aanzetten</h3>
+  <button onclick="enableNotifications()">Enable notifications</button>
+</div>
+
+<div class="card">
+  <h3>➕ Plant</h3>
+  <input id="name" placeholder="Plant naam">
+  <select id="stage">
+    <option value="seedling">Seedling</option>
+    <option value="veg">Vegetative</option>
+    <option value="flower">Flower</option>
+  </select>
+  <button onclick="addPlant()">Toevoegen</button>
+</div>
+
+<div class="card">
+  <h3>🌿 Plant select</h3>
+  <select id="plantSelect" onchange="render()"></select>
+</div>
+
+<div class="card">
+  <h3>📊 Meting</h3>
+  <input type="number" id="ec" step="0.1" placeholder="EC">
+  <input type="number" id="ph" step="0.1" placeholder="pH">
+  <button onclick="saveReading()">Opslaan</button>
+</div>
+
+<div class="card">
+  <h3>🚰 Water</h3>
+  <button onclick="waterChange()">Water gewisseld</button>
+  <p id="waterInfo"></p>
+</div>
+
+<div class="card">
+  <h3>🧠 Status</h3>
+  <p id="status"></p>
+</div>
+
+<div class="card">
+  <h3>📒 Log</h3>
+  <div id="log"></div>
+</div>
+
+<script>
+
+let data = JSON.parse(localStorage.getItem("dwc_v4_final")) || {
+  plants: [],
+  selected: 0
+};
+
+function save() {
+  localStorage.setItem("dwc_v4_final", JSON.stringify(data));
+}
+
+//
+// 🔔 NOTIFICATIONS
+//
+function enableNotifications() {
+  if ("Notification" in window) {
+    Notification.requestPermission().then(p => {
+      alert("Notificaties: " + p);
+    });
+  }
+}
+
+function notify(title, message) {
+
+  alert(title + "\n" + message);
+
+  if ("Notification" in window && Notification.permission === "granted") {
+    new Notification(title, { body: message });
+  }
+}
+
+//
+// 🌱 PLANTS
+//
+function addPlant() {
+  let name = document.getElementById("name").value;
+  let stage = document.getElementById("stage").value;
+
+  if (!name) return;
+
+  data.plants.push({
+    name,
+    stage,
+    lastWater: Date.now(),
+    log: []
+  });
+
+  data.selected = data.plants.length - 1;
+  save();
+  render();
+}
+
+function saveReading() {
+
+  let p = data.plants[data.selected];
+  if (!p) return;
+
+  let ec = parseFloat(document.getElementById("ec").value);
+  let ph = parseFloat(document.getElementById("ph").value);
+
+  p.log.push({ ec, ph, t: Date.now() });
+
+  if (p.log.length > 25) p.log.shift();
+
+  save();
+  render();
+}
+
+function waterChange() {
+  let p = data.plants[data.selected];
+  if (!p) return;
+
+  p.lastWater = Date.now();
+  save();
+  render();
+}
+
+//
+// 🧠 AI RULE ENGINE
+//
+function analyze(p, last) {
+
+  if (!last) return "Geen data";
+
+  let issues = [];
+
+  if (last.ec < 1) {
+    issues.push("EC te laag → voeding tekort");
+    notify("🌱 DWC Alert", "EC te laag");
+  }
+
+  if (last.ec > 2.2) {
+    issues.push("EC te hoog → stress risico");
+    notify("🌱 DWC Alert", "EC te hoog");
+  }
+
+  if (last.ph < 5.5) {
+    issues.push("pH te laag");
+    notify("🌱 pH Alert", "pH te laag");
+  }
+
+  if (last.ph > 6.5) {
+    issues.push("pH te hoog");
+    notify("🌱 pH Alert", "pH te hoog");
+  }
+
+  if (issues.length === 0) return "✔ Alles stabiel";
+
+  return "⚠ " + issues.join(" | ");
+}
+
+//
+// 🚰 WATER REMINDER
+//
+function waterReminder(p) {
+
+  let days = Math.floor((Date.now() - p.lastWater) / (1000*60*60*24));
+
+  if (days >= 7) {
+    notify("🚰 Water reminder", "Tijd om water te wisselen");
+  }
+}
+
+//
+// 📱 RENDER
+//
+function render() {
+
+  let sel = document.getElementById("plantSelect");
+  sel.innerHTML = "";
+
+  data.plants.forEach((p,i)=>{
+    sel.innerHTML += `<option value="${i}">${p.name}</option>`;
+  });
+
+  sel.value = data.selected;
+  data.selected = parseInt(sel.value);
+
+  let p = data.plants[data.selected];
+  if (!p) return;
+
+  let last = p.log[p.log.length - 1];
+
+  let days = Math.floor((Date.now() - p.lastWater) / (1000*60*60*24));
+  document.getElementById("waterInfo").innerText =
+    "Laatste waterwissel: " + days + " dagen geleden";
+
+  if (last) {
+    document.getElementById("status").innerText =
+      analyze(p, last);
+  }
+
+  if (p) {
+    waterReminder(p);
+  }
+
+  let html = "";
+  p.log.slice().reverse().forEach(x=>{
+    html += `<div class="small">
+      EC:${x.ec} | pH:${x.ph} | ${new Date(x.t).toLocaleString()}
+    </div>`;
+  });
+
+  document.getElementById("log").innerHTML = html;
+
+  save();
+}
+
+render();
+
+</script>
+
+</body>
+</html>
