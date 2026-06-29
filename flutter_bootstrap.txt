@@ -1,6 +1,0 @@
-THIS IS A FLUTTER PROJECT PLACEHOLDER
-
-Codemagic must generate full Flutter structure during build.
-
-Project name: dwc_buddy
-Target: iOS + Android
