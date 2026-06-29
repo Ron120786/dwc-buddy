@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DWC Smart System v3</title>
+
+<style>
+body {
+  font-family: Arial;
+  background: #0b0b0b;
+  color: white;
+  padding: 16px;
+}
+
+h1 { margin-bottom: 5px; }
+
+.card {
+  background: #1c1c1c;
+  padding: 12px;
+  margin: 10px 0;
+  border-radius: 12px;
+}
+
+input, select, button {
+  width: 100%;
+  padding: 10px;
+  margin-top: 6px;
+  border-radius: 8px;
+  border: none;
+  font-size: 15px;
+}
+
+button {
+  background: #2ecc71;
+  color: white;
+  font-weight: bold;
+}
+
+.bad { color: #ff5c5c; }
+.good { color: #2ecc71; }
+
+.small { font-size: 12px; opacity: 0.7; }
+</style>
+</head>
+
+<body>
+
+<h1>🌱 DWC Smart System v3</h1>
+
+<div class="card">
+  <h3>➕ Plant toevoegen</h3>
+  <input id="name" placeholder="Plant naam">
+  <select id="stage">
+    <option value="veg">Vegetative</option>
+    <option value="flower">Flower</option>
+    <option value="seedling">Seedling</option>
+  </select>
+  <button onclick="addPlant()">Toevoegen</button>
+</div>
+
+<div class="card">
+  <h3>🌿 Plant kiezen</h3>
+  <select id="plantSelect" onchange="render()"></select>
+</div>
+
+<div class="card">
+  <h3>EC / pH invoer</h3>
+  <input type="number" id="ec" step="0.1" placeholder="EC">
+  <input type="number" id="ph" step="0.1" placeholder="pH">
+  <button onclick="saveReading()">Opslaan meting</button>
+</div>
+
+<div class="card">
+  <h3>🚰 Waterwissel</h3>
+  <button onclick="waterChange()">Water gewisseld</button>
+  <p id="waterInfo"></p>
+</div>
+
+<div class="card">
+  <h3>⚠ AI Status (simpel)</h3>
+  <p id="status"></p>
+</div>
+
+<div class="card">
+  <h3>📒 Log</h3>
+  <div id="log"></div>
+</div>
+
+<script>
+
+let data = JSON.parse(localStorage.getItem("dwc_v3")) || {
+  plants: [],
+  selected: 0
+};
+
+function save() {
+  localStorage.setItem("dwc_v3", JSON.stringify(data));
+}
+
+function addPlant() {
+  let name = document.getElementById("name").value;
+  let stage = document.getElementById("stage").value;
+
+  if (!name) return;
+
+  data.plants.push({
+    name,
+    stage,
+    lastWater: Date.now(),
+    log: []
+  });
+
+  data.selected = data.plants.length - 1;
+
+  save();
+  render();
+}
+
+function saveReading() {
+
+  let plant = data.plants[data.selected];
+  if (!plant) return;
+
+  plant.log.push({
+    ec: parseFloat(document.getElementById("ec").value),
+    ph: parseFloat(document.getElementById("ph").value),
+    t: Date.now()
+  });
+
+  if (plant.log.length > 20) plant.log.shift();
+
+  save();
+  render();
+}
+
+function waterChange() {
+  let plant = data.plants[data.selected];
+  if (!plant) return;
+
+  plant.lastWater = Date.now();
+  save();
+  render();
+}
+
+function getTargets(stage) {
+  if (stage === "seedling") return { ecMin: 0.4, ecMax: 1.0 };
+  if (stage === "veg") return { ecMin: 1.0, ecMax: 1.8 };
+  if (stage === "flower") return { ecMin: 1.6, ecMax: 2.4 };
+}
+
+function render() {
+
+  let sel = document.getElementById("plantSelect");
+  sel.innerHTML = "";
+
+  data.plants.forEach((p,i) => {
+    sel.innerHTML += `<option value="${i}">${p.name} (${p.stage})</option>`;
+  });
+
+  sel.value = data.selected;
+  data.selected = parseInt(sel.value);
+
+  let plant = data.plants[data.selected];
+  if (!plant) return;
+
+  let days = Math.floor((Date.now() - plant.lastWater) / (1000*60*60*24));
+
+  document.getElementById("waterInfo").innerText =
+    "Laatste waterwissel: " + days + " dagen geleden";
+
+  let last = plant.log[plant.log.length - 1];
+
+  if (!last) {
+    document.getElementById("status").innerText = "Nog geen data";
+    return;
+  }
+
+  let t = getTargets(plant.stage);
+
+  let msg = "";
+
+  if (last.ec < t.ecMin) msg = "⚠ EC te laag voor " + plant.stage;
+  else if (last.ec > t.ecMax) msg = "⚠ EC te hoog voor " + plant.stage;
+  else msg = "✔ EC binnen range";
+
+  document.getElementById("status").className =
+    (last.ec < t.ecMin || last.ec > t.ecMax) ? "bad" : "good";
+
+  document.getElementById("status").innerText = msg;
+
+  let html = "";
+  plant.log.slice().reverse().forEach(x => {
+    html += `<div class="small">
+      EC: ${x.ec} | pH: ${x.ph} | ${new Date(x.t).toLocaleString()}
+    </div>`;
+  });
+
+  document.getElementById("log").innerHTML = html;
+
+  save();
+}
+
+render();
+
+</script>
+
+</body>
+</html>
